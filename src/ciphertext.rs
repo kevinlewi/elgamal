@@ -1,6 +1,6 @@
 use core::ops::{Add, Div, Mul, Sub};
-use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::{constants::RISTRETTO_BASEPOINT_TABLE, ristretto::RistrettoPoint};
 use serde::{Deserialize, Serialize};
 
 use crate::public::*;
@@ -19,6 +19,25 @@ pub struct Ciphertext {
 impl Ciphertext {
     pub fn get_points(self) -> (RistrettoPoint, RistrettoPoint) {
         (self.points.0, self.points.1)
+    }
+
+    pub fn add_by_plaintext(self, plaintext: u64) -> Self {
+        let plaintext_point = &RISTRETTO_BASEPOINT_TABLE * &Scalar::from(plaintext);
+        Self {
+            pk: self.pk,
+            points: (self.points.0, self.points.1 + plaintext_point),
+        }
+    }
+
+    pub fn mul_by_plaintext(self, plaintext: u64) -> Self {
+        let plaintext_scalar = Scalar::from(plaintext);
+        Self {
+            pk: self.pk,
+            points: (
+                self.points.0 * plaintext_scalar,
+                self.points.1 * plaintext_scalar,
+            ),
+        }
     }
 
     pub fn randomise_ciphertext_and_prove(self) -> (Ciphertext, CompactProof) {
@@ -219,6 +238,28 @@ mod tests {
 
         assert_eq!(sk.decrypt(&randomised_ctxt), ptxt);
         assert!(!ctxt_rnd.verify_randomisation(&ctxt, &proof));
+    }
+
+    #[test]
+    fn test_additive_api() {
+        let mut csprng = OsRng;
+        let sk = SecretKey::new(&mut csprng);
+        let pk = PublicKey::from(&sk);
+
+        let ctxt1 = pk.encrypt_additive(50);
+        let ctxt2 = pk.encrypt_additive(2);
+
+        assert_eq!(sk.decrypt_additive(&ctxt1, 100), 50);
+        assert_eq!(sk.decrypt_additive(&ctxt2, 100), 2);
+
+        let ctxt3 = ctxt1 + ctxt2;
+        assert_eq!(sk.decrypt_additive(&ctxt3, 100), 52);
+
+        let ctxt4 = ctxt1.add_by_plaintext(11);
+        assert_eq!(sk.decrypt_additive(&ctxt4, 100), 61);
+
+        let ctxt5 = ctxt1.mul_by_plaintext(3);
+        assert_eq!(sk.decrypt_additive(&ctxt5, 1000), 150);
     }
 
     #[test]

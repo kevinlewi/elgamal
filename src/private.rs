@@ -1,13 +1,15 @@
 #![allow(non_snake_case)]
 use clear_on_drop::clear::Clear;
 use core::ops::Mul;
-use curve25519_dalek::constants::{RISTRETTO_BASEPOINT_POINT};
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::traits::Identity;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512};
 
+use std::collections::HashMap;
 use zkp::{CompactProof, Transcript};
 
 use crate::ciphertext::*;
@@ -30,12 +32,40 @@ impl PartialEq for SecretKey {
     }
 }
 
+const DEFAULT_LOOKUP_TABLE_SIZE: usize = 200_000;
+
+lazy_static::lazy_static! {
+    /// This is an example for using doc comment attributes
+    static ref LOOKUP_TABLE: HashMap<Vec<u8>, usize> = {
+        let now = std::time::Instant::now();
+        let ret = build_lookup(DEFAULT_LOOKUP_TABLE_SIZE);
+        println!("Lookup table built in {} ms", now.elapsed().as_millis());
+        ret
+    };
+}
+
+fn build_lookup(lookup_size: usize) -> HashMap<Vec<u8>, usize> {
+    let mut lookup_table = HashMap::new();
+    lookup_table.insert(RistrettoPoint::identity().compress().to_bytes().to_vec(), 0);
+
+    let mut acc = RISTRETTO_BASEPOINT_POINT;
+    for i in 1..lookup_size {
+        lookup_table.insert(acc.compress().to_bytes().to_vec(), i);
+        acc = acc + RISTRETTO_BASEPOINT_POINT;
+    }
+    lookup_table
+}
+
 impl SecretKey {
     /// Create new SecretKey
     pub fn new<T: RngCore + CryptoRng>(csprng: &mut T) -> Self {
         let mut bytes = [0u8; 32];
         csprng.fill_bytes(&mut bytes);
-        SecretKey(clamp_scalar(bytes).reduce())
+        let scalar = clamp_scalar(bytes).reduce();
+
+        lazy_static::initialize(&LOOKUP_TABLE);
+
+        SecretKey(scalar)
     }
 
     /// Get scalar value
@@ -47,6 +77,19 @@ impl SecretKey {
     pub fn decrypt(&self, ciphertext: &Ciphertext) -> RistrettoPoint {
         let (point1, point2) = ciphertext.get_points();
         point2 - point1 * self.0
+    }
+
+    /// Decrypt ciphertexts
+    pub fn decrypt_additive(&self, ciphertext: &Ciphertext, _range: u64) -> u64 {
+        let (point1, point2) = ciphertext.get_points();
+        let test = point2 - point1 * self.0;
+
+        match LOOKUP_TABLE.get(&test.compress().to_bytes().to_vec()) {
+            Some(i) => return *i as u64,
+            None => {
+                panic!("Could not decrypt!");
+            }
+        }
     }
 
     /// Sign a message using EdDSA algorithm.

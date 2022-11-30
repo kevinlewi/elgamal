@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 use clear_on_drop::clear::Clear;
-use curve25519_dalek::constants::{RISTRETTO_BASEPOINT_COMPRESSED, RISTRETTO_BASEPOINT_POINT};
+use curve25519_dalek::constants::{
+    RISTRETTO_BASEPOINT_COMPRESSED, RISTRETTO_BASEPOINT_POINT, RISTRETTO_BASEPOINT_TABLE,
+};
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use rand_core::OsRng;
@@ -62,6 +64,20 @@ impl PublicKey {
 
         let random_generator = RISTRETTO_BASEPOINT_POINT * random;
         let encrypted_plaintext = message + self.0 * random;
+        random.clear();
+        Ciphertext {
+            pk: self,
+            points: (random_generator, encrypted_plaintext),
+        }
+    }
+
+    pub fn encrypt_additive(self, message: u64) -> Ciphertext {
+        let mut csprng: OsRng = OsRng;
+        let mut random: Scalar = Scalar::random(&mut csprng);
+        let message_scalar = Scalar::from(message);
+        let g_x = &RISTRETTO_BASEPOINT_TABLE * &message_scalar;
+        let random_generator = &RISTRETTO_BASEPOINT_TABLE * &random;
+        let encrypted_plaintext = g_x + self.0 * random;
         random.clear();
         Ciphertext {
             pk: self,
@@ -241,7 +257,9 @@ impl PublicKey {
 
     /// Generate public key from bytes
     pub fn from_bytes(bytes: &[u8]) -> Option<PublicKey> {
-        Some(PublicKey(CompressedRistretto::from_slice(bytes).decompress()?))
+        Some(PublicKey(
+            CompressedRistretto::from_slice(bytes).decompress()?,
+        ))
     }
 }
 

@@ -2,95 +2,70 @@
 extern crate criterion;
 use criterion::Criterion;
 
-use curve25519_dalek::ristretto::RistrettoPoint;
 use elgamal_ristretto::private::SecretKey;
 use elgamal_ristretto::public::PublicKey;
 use rand_core::OsRng;
 
-fn encrypt_ciphertext(c: &mut Criterion) {
-    let label = format!("Encryption");
+fn encrypt_ciphertext_additive(c: &mut Criterion) {
+    let label = format!("Single Additive ElGamal Encryption");
     c.bench_function(&label, move |b| {
         let mut csprng = OsRng;
         let sk = SecretKey::new(&mut csprng);
         let pk = PublicKey::from(&sk);
 
-        let ptxt = RistrettoPoint::random(&mut csprng);
-
         b.iter(|| {
-            pk.encrypt(&ptxt);
+            pk.encrypt_additive(100);
         })
     });
 }
 
-fn decrypt_ciphertext(c: &mut Criterion) {
-    let label = format!("Decryption");
+fn decrypt_ciphertext_additive(c: &mut Criterion) {
+    let label = format!("Single Additive ElGamal Decryption");
     c.bench_function(&label, move |b| {
         let mut csprng = OsRng;
         let sk = SecretKey::new(&mut csprng);
         let pk = PublicKey::from(&sk);
 
-        let ptxt = RistrettoPoint::random(&mut csprng);
-        let ctxt = pk.encrypt(&ptxt);
+        let ctxt = pk.encrypt_additive(100);
 
         b.iter(|| {
-            sk.decrypt(&ctxt);
+            sk.decrypt_additive(&ctxt, 1000000);
         })
     });
 }
 
-fn signature(c: &mut Criterion) {
-    let label = format!("Signature");
-    c.bench_function(&label, move |b| {
-        let mut csprng = OsRng;
-        let sk = SecretKey::new(&mut csprng);
-
-        let msg = RistrettoPoint::random(&mut csprng);
-
-        b.iter(|| {
-            sk.sign(&msg);
-        })
-    });
-}
-
-fn verify_signature(c: &mut Criterion) {
-    let label = format!("Verify Signature");
+fn encrypt_ciphertext_add_plaintext(c: &mut Criterion) {
+    let label = format!("Single Additive ElGamal Plaintext Addition");
     c.bench_function(&label, move |b| {
         let mut csprng = OsRng;
         let sk = SecretKey::new(&mut csprng);
         let pk = PublicKey::from(&sk);
 
-        let msg = RistrettoPoint::random(&mut csprng);
-        let signature = sk.sign(&msg);
+        let ctxt1 = pk.encrypt_additive(100);
 
-        b.iter(|| pk.verify_signature(&msg, signature))
+        b.iter(|| ctxt1.add_by_plaintext(200))
     });
 }
 
-fn ciphertext_addition(c: &mut Criterion) {
-    let label = format!("Ciphertext homomorphic addition");
+fn encrypt_ciphertext_add_ciphertext(c: &mut Criterion) {
+    let label = format!("Single Additive ElGamal Ciphertext Addition");
     c.bench_function(&label, move |b| {
         let mut csprng = OsRng;
         let sk = SecretKey::new(&mut csprng);
         let pk = PublicKey::from(&sk);
 
-        let ptxt1 = RistrettoPoint::random(&mut csprng);
-        let ptxt2 = RistrettoPoint::random(&mut csprng);
+        let ctxt1 = pk.encrypt_additive(100);
+        let ctxt2 = pk.encrypt_additive(200);
 
-        let ctxt1 = pk.encrypt(&ptxt1);
-        let ctxt2 = pk.encrypt(&ptxt2);
-
-        b.iter(|| {
-            let _ = ctxt1 + ctxt2;
-        })
+        b.iter(|| ctxt1 + ctxt2)
     });
 }
 
 criterion_group!(
     benches,
-    encrypt_ciphertext,
-    decrypt_ciphertext,
-    signature,
-    verify_signature,
-    ciphertext_addition
+    encrypt_ciphertext_additive,
+    decrypt_ciphertext_additive,
+    encrypt_ciphertext_add_plaintext,
+    encrypt_ciphertext_add_ciphertext,
 );
 criterion_main!(benches);
